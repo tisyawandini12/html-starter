@@ -3,77 +3,133 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Dashboard Multi-Gas Monitoring</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <title>Dashboard Monitoring Gas</title>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-app.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/8.10.0/firebase-database.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/8.10.1/firebase-database.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
-        body { background-color: #f8f9fa; }
-        .card { border-radius: 12px; border: none; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
-        .val { font-size: 1.8rem; font-weight: bold; color: #0d6efd; }
+        body { background: #f8f9fa; font-family: sans-serif; }
+        .card-stat { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); text-align: center; }
+        .value { font-size: 2.5rem; font-weight: bold; color: #0d6efd; }
+        .alarm-on { background: #ff4757 !important; color: white !important; animation: pulse 1s infinite; }
+        @keyframes pulse { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
     </style>
 </head>
 <body>
 <div class="container py-4">
-    <h3 class="text-center mb-4">IoT Multi-Gas Dashboard</h3>
-    
-    <div class="row g-3 text-center mb-4">
-        <div class="col-md-2 col-6"><div class="card p-2">Suhu<div class="val" id="t">--</div></div></div>
-        <div class="col-md-2 col-6"><div class="card p-2">Hum<div class="val" id="h">--</div></div></div>
-        <div class="col-md-2 col-6"><div class="card p-2">LPG<div class="val" id="lpg">--</div></div></div>
-        <div class="col-md-2 col-6"><div class="card p-2">CO<div class="val" id="co">--</div></div></div>
-        <div class="col-md-2 col-6"><div class="card p-2">H2<div class="val" id="h2">--</div></div></div>
-        <div class="col-md-2 col-6"><div class="card p-2">CH4<div class="val" id="ch4">--</div></div></div>
+    <h2 class="text-center fw-bold mb-1">Smart IoT Monitoring</h2>
+    <p class="text-center text-muted mb-4">Status: <span id="log-status" class="badge bg-secondary">OFFLINE</span></p>
+
+    <div class="row g-3">
+        <div class="col-md-4"><div class="card-stat">Suhu<div class="value"><span id="temp">0</span>°C</div></div></div>
+        <div class="col-md-4"><div class="card-stat">Kelembapan<div class="value"><span id="hum">0</span>%</div></div></div>
+        <div class="col-md-4"><div class="card-stat" id="gas-card">Gas LPG<div class="value"><span id="gas">0</span> PPM</div><small id="gas-label">Aman</small></div></div>
     </div>
 
-    <div class="card p-3 mb-4"><canvas id="chartGue" height="120"></canvas></div>
+    <div class="row mt-4">
+        <div class="col-md-4">
+            <div class="card-stat p-3 text-start">
+                <h6>Kontrol Panel</h6>
+                <button class="btn btn-success w-100 mb-2" onclick="updateControl('start')">START LOGGING</button>
+                <button class="btn btn-danger w-100 mb-3" onclick="updateControl('stop')">STOP LOGGING</button>
+                <label class="small fw-bold">Set Interval (Detik):</label>
+                <div class="input-group mb-2">
+                    <input type="number" id="intVal" class="form-control" placeholder="Detik">
+                    <button class="btn btn-primary" onclick="setIntervalFB()">SET</button>
+                </div>
+                <button class="btn btn-outline-dark btn-sm w-100 mb-2" onclick="location.reload()">Reset Histori Lokal</button>
+                <a href="URL_SPREADSHEET_KAMU" target="_blank" class="btn btn-link w-100 btn-sm">Lihat Spreadsheet ↗</a>
+            </div>
+        </div>
+        <div class="col-md-8">
+            <div class="bg-white p-3 rounded shadow-sm mb-3">
+                <canvas id="chartTH" height="120"></canvas>
+            </div>
+            <div class="bg-white p-3 rounded shadow-sm">
+                <canvas id="chartG" height="120"></canvas>
+            </div>
+        </div>
+    </div>
 
-    <div class="table-responsive"><table class="table table-dark table-striped">
-        <thead><tr><th>Waktu</th><th>LPG</th><th>CO</th><th>H2</th><th>CH4</th></tr></thead>
-        <tbody id="tabelData"></tbody>
-    </table></div>
+    <div class="card-stat mt-4 p-3 text-start">
+        <h6>Tabel Riwayat (Lokal)</h6>
+        <div class="table-responsive">
+            <table class="table table-striped table-sm">
+                <thead><tr><th>Waktu</th><th>Suhu</th><th>Hum</th><th>Gas</th><th>Status</th></tr></thead>
+                <tbody id="tableBody"></tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <script>
-    const config = { databaseURL: "https://dashboard-iot-46919-default-rtdb.asia-southeast1.firebasedatabase.app" };
-    firebase.initializeApp(config);
+    const firebaseConfig = { databaseURL: "https://dashboard-iot-46919-default-rtdb.asia-southeast1.firebasedatabase.app" };
+    firebase.initializeApp(firebaseConfig);
     const db = firebase.database();
 
-    const ctx = document.getElementById('chartGue').getContext('2d');
-    const myChart = new Chart(ctx, {
+    // Chart TH
+    const ctxTH = document.getElementById('chartTH').getContext('2d');
+    const chartTH = new Chart(ctxTH, {
         type: 'line',
         data: { labels: [], datasets: [
-            { label: 'LPG', data: [], borderColor: 'green', tension: 0.1 },
-            { label: 'CO', data: [], borderColor: 'blue', tension: 0.1 },
-            { label: 'H2', data: [], borderColor: 'orange', tension: 0.1 },
-            { label: 'CH4', data: [], borderColor: 'red', tension: 0.1 }
+            { label: 'Suhu (°C)', borderColor: 'red', data: [], tension: 0.3 },
+            { label: 'Hum (%)', borderColor: 'blue', data: [], tension: 0.3 }
         ]}
+    });
+
+    // Chart Gas
+    const ctxG = document.getElementById('chartG').getContext('2d');
+    const chartG = new Chart(ctxG, {
+        type: 'line',
+        data: { labels: [], datasets: [{ label: 'LPG (PPM)', borderColor: 'orange', data: [], fill: true, backgroundColor: 'rgba(255,165,0,0.1)' }]}
     });
 
     db.ref("monitoring").on("value", (s) => {
         const d = s.val();
         if (d) {
+            document.getElementById("temp").innerText = d.suhu;
+            document.getElementById("hum").innerText = d.kelembapan;
+            document.getElementById("gas").innerText = d.gas.toFixed(1);
+            
+            const logS = document.getElementById("log-status");
+            logS.innerText = (d.control || "STOP").toUpperCase();
+            logS.className = d.control === "start" ? "badge bg-success" : "badge bg-danger";
+
+            const gc = document.getElementById("gas-card");
+            if(d.gas > 400) {
+                gc.classList.add("alarm-on");
+                document.getElementById("gas-label").innerText = "BAHAYA! KEBOCORAN!";
+            } else {
+                gc.classList.remove("alarm-on");
+                document.getElementById("gas-label").innerText = "Kondisi Aman";
+            }
+
             const time = new Date().toLocaleTimeString();
-            document.getElementById("t").innerText = d.temperature;
-            document.getElementById("h").innerText = d.humidity;
-            document.getElementById("lpg").innerText = d.gas_lpg.toFixed(1);
-            document.getElementById("co").innerText = d.gas_co.toFixed(1);
-            document.getElementById("h2").innerText = d.gas_h2.toFixed(1);
-            document.getElementById("ch4").innerText = d.gas_ch4.toFixed(1);
-
-            if(myChart.data.labels.length > 10) { myChart.data.labels.shift(); myChart.data.datasets.forEach(ds => ds.data.shift()); }
-            myChart.data.labels.push(time);
-            myChart.data.datasets[0].data.push(d.gas_lpg);
-            myChart.data.datasets[1].data.push(d.gas_co);
-            myChart.data.datasets[2].data.push(d.gas_h2);
-            myChart.data.datasets[3].data.push(d.gas_ch4);
-            myChart.update();
-
-            const row = `<tr><td>${time}</td><td>${d.gas_lpg.toFixed(2)}</td><td>${d.gas_co.toFixed(2)}</td><td>${d.gas_h2.toFixed(2)}</td><td>${d.gas_ch4.toFixed(2)}</td></tr>`;
-            document.getElementById("tabelData").innerHTML = row + document.getElementById("tabelData").innerHTML;
+            updateUI(time, d);
         }
     });
+
+    function updateUI(t, d) {
+        if(chartTH.data.labels.length > 10) {
+            chartTH.data.labels.shift(); chartTH.data.datasets[0].data.shift(); chartTH.data.datasets[1].data.shift();
+            chartG.data.labels.shift(); chartG.data.datasets[0].data.shift();
+        }
+        chartTH.data.labels.push(t); chartTH.data.datasets[0].data.push(d.suhu); chartTH.data.datasets[1].data.push(d.kelembapan);
+        chartG.data.labels.push(t); chartG.data.datasets[0].data.push(d.gas);
+        chartTH.update(); chartG.update();
+
+        const row = `<tr><td>${t}</td><td>${d.suhu}</td><td>${d.kelembapan}</td><td>${d.gas.toFixed(1)}</td><td>${d.status}</td></tr>`;
+        const tb = document.getElementById("tableBody");
+        tb.insertAdjacentHTML('afterbegin', row);
+        if(tb.children.length > 15) tb.removeChild(tb.lastChild);
+    }
+
+    function updateControl(c) { db.ref("monitoring/control").set(c); }
+    function setIntervalFB() { 
+        const v = document.getElementById("intVal").value;
+        if(v > 0) db.ref("monitoring/interval").set(parseInt(v));
+    }
 </script>
 </body>
 </html>
